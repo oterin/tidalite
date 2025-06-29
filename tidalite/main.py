@@ -5,7 +5,7 @@ import typer
 from rich.console import Console
 
 from . import auth, config
-from .tui import run_tui
+from .tui.app import run_tui # <--- modified this line
 
 app = typer.Typer(
     name="tidalite",

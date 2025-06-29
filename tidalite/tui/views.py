@@ -2,7 +2,7 @@
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any
+from typing import List, Optional, Any, TYPE_CHECKING
 
 from rich.layout import Layout
 from rich.align import Align
@@ -12,6 +12,10 @@ from rich.panel import Panel
 from . import theme
 from .components import SelectableList
 from .. import models, api, player
+
+# use type_checking block to prevent circular import at runtime
+if TYPE_CHECKING:
+    from .app import TUIApp
 
 # --- view base class ---
 class View(ABC):
@@ -73,7 +77,7 @@ class TrackListView(ListView):
     def format_track(self, track: models.Track, is_focused: bool) -> str:
         style = theme.STYLE_FOCUSED if is_focused else theme.STYLE_BOLD
         num = f"{track.track_number: >2}." if track.track_number else "  "
-        return Text.assemble((f" {num} ", theme.STYLE_DIM), (track.title or "", style), (f" ({track.duration_str})", theme.STYLE_DIM))
+        return ssemble((f" {num} ", theme.STYLE_DIM), (track.title or "", style), (f" ({track.duration_str})", theme.STYLE_DIM))
 
     async def on_select(self):
         track = self.list.selected_item
@@ -166,6 +170,6 @@ class SearchView(View):
             await self.app.push_view(TrackListView(self.app, results.tracks, f"search results for '{self.query}'"))
         elif key == "backspace":
             self.query = self.query[:-1]
-        elif len(key) == 1:
+        elif len(key) == 1 and key.isprintable(): # only add printable characters
             self.query += key
         self.layout.update(self.render())

@@ -132,4 +132,4 @@ async def run_auth_flow():
         await asyncio.sleep(2)
 
     except (TimeoutError, Exception) as e:
-        console.print(f"\n  [bold][/bold] an error occurred
+        console.print(f"\n  [bold][/bold] an error occurred: {e}")

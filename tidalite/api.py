@@ -89,4 +89,4 @@ class APIClient:
         return res.json()
 
     async def close(self):
-        await self._
+        await self._client.aclose()

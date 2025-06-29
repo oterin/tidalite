@@ -9,8 +9,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
+from rich import box # import box style directly
 
-from . import config, tui
+from . import config # <-- removed 'tui' import
 
 console = Console()
 
@@ -103,26 +104,27 @@ async def run_auth_flow():
     """runs the full interactive device authentication flow."""
     console.clear()
     header_text = Text()
-    header_text.append("tidalite", style=tui.theme.STYLE_BOLD)
-    header_text.append(" / ", style=tui.theme.STYLE_DIM)
-    header_text.append("authentication", style=tui.theme.STYLE_DIM)
+    # use generic styles instead of tui.theme
+    header_text.append("tidalite", style="bold")
+    header_text.append(" / ", style="dim")
+    header_text.append("authentication", style="dim")
     console.print(Align.center(header_text))
-    console.print(Align.center("" * 40, style=tui.theme.STYLE_DIM))
+    console.print(Align.center("" * 40, style="dim"))
     console.print()
 
     try:
-        with console.status("  requesting device code...", spinner_style=tui.theme.STYLE_DIM):
+        with console.status("  requesting device code...", spinner_style="dim"):
             device_code_info = await get_device_code()
         
         panel_content = Text(justify="center")
         panel_content.append("1. open a browser and go to:\n")
-        panel_content.append(f"{device_code_info['verificationUriComplete']}\n\n", style=tui.theme.STYLE_BOLD)
+        panel_content.append(f"{device_code_info['verificationUriComplete']}\n\n", style="bold")
         panel_content.append("2. enter the following code:\n")
-        panel_content.append(device_code_info['userCode'], style=tui.theme.STYLE_BOLD)
+        panel_content.append(device_code_info['userCode'], style="bold")
         
-        console.print(Align.center(Panel(panel_content, box=tui.theme.BOX_STYLE, border_style=tui.theme.STYLE_DIM)))
+        console.print(Align.center(Panel(panel_content, box=box.SIMPLE, border_style="dim")))
 
-        with console.status("  waiting for authorization in browser...", spinner_style=tui.theme.STYLE_DIM):
+        with console.status("  waiting for authorization in browser...", spinner_style="dim"):
             creds = await poll_for_token(device_code_info)
         
         creds["expires_at"] = time.time() + creds["expires_in"]

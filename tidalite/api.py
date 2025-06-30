@@ -8,34 +8,68 @@ import httpx
 from . import auth, config, models
 
 class APIClient:
-    def __init__(self):
+    def __init__(self, creds: models.Credentials):
         self._client = httpx.AsyncClient(http2=True)
-        self.user: Optional[Dict[str, Any]] = None
-        self.country_code: Optional[str] = None
+        self.creds = creds
+        self.country_code = creds.user.get('countryCode', 'US')
 
-    async def _request(self, method: str, url: str, params: Optional[Dict] = None, data: Optional[Dict] = None) -> httpx.Response:
-        creds = await auth.get_valid_credentials()
-        if not creds:
+    def update_credentials(self, creds: models.Credentials):
+        """Update the credentials, e.g., after a token refresh."""
+        self.creds = creds
+
+    async def _request(self, method: str, url: str, params: Optional[dict] = None, data: Optional[dict] = None) -> httpx.Response:
+        """Makes an authenticated request to the Tidal API."""
+        if not self.creds or not self.creds.access_token:
             raise ConnectionError("not authenticated. please restart tidalite.")
+
+        headers = {
+            "authorization": f"Bearer {self.creds.access_token}",
+            "user-agent": "TIDAL_ANDROID/1039 okhttp/4.2.2"
+        }
         
-        if not self.user:
-            self.user = creds.get('user')
-            self.country_code = self.user.get('countryCode') if self.user else 'us'
+        final_params = {"countryCode": self.country_code}
+        if params:
+            final_params.update(params)
 
-        headers = {"authorization": f"bearer {creds['access_token']}"}
-        if params is None:
-            params = {}
-        if "countryCode" not in params:
-            params["countryCode"] = self.country_code
+        try:
+            response = await self._client.request(method, url, params=final_params, headers=headers, json=data)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as e:
+            # provide more detailed error information
+            error_details = f"{e.response.status_code} {e.response.reason_phrase}"
+            if e.response.status_code == 401:
+                raise ConnectionError(f"authentication failed: {error_details}. please login again.")
+            elif e.response.status_code == 404:
+                raise ValueError(f"resource not found: {error_details}. url: {url}")
+            elif e.response.status_code == 403:
+                raise PermissionError(f"access forbidden: {error_details}. check your subscription.")
+            else:
+                raise ConnectionError(f"api error: {error_details}")
 
-        response = await self._client.request(method, url, params=params, headers=headers, json=data)
-        response.raise_for_status()
-        return response
+    async def check_login(self) -> bool:
+        """Checks if the current access token is valid."""
+        try:
+            await self._request("get", f"{config.api_url_v1}/users/{self.creds.user_id}/subscription")
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                return False
+            raise
+        except (ConnectionError, PermissionError):
+            return False
 
     async def get_user_playlists(self) -> List[models.Playlist]:
-        if not self.user: return []
-        res = await self._request("get", f"{config.api_url_v1}/users/{self.user['userId']}/playlistsandfavoriteplaylists")
+        res = await self._request("get", f"{config.api_url_v1}/users/{self.creds.user_id}/playlists")
         return [models.Playlist(**p) for p in res.json()['items']]
+
+    async def get_user_favorite_albums(self) -> List[models.Album]:
+        res = await self._request("get", f"{config.api_url_v1}/users/{self.creds.user_id}/favorites/albums")
+        return [models.Album(**a['item']) for a in res.json()['items'] if a.get('item')]
+        
+    async def get_user_favorite_tracks(self) -> List[models.Track]:
+        res = await self._request("get", f"{config.api_url_v1}/users/{self.creds.user_id}/favorites/tracks")
+        return [models.Track(**t['item']) for t in res.json()['items'] if t.get('item')]
 
     async def get_playlist_tracks(self, playlist_id: str) -> List[models.Track]:
         res = await self._request("get", f"{config.api_url_v1}/playlists/{playlist_id}/items")
@@ -69,8 +103,8 @@ class APIClient:
         )
 
     async def get_stream_details(self, track_id: int) -> models.StreamDetails:
-        params = {"audioquality": "lossless", "playbackmode": "stream", "assetpresentation": "full"}
-        res = await self._request("get", f"{config.api_url_v1}/tracks/{track_id}/playbackinfopostpaywall", params=params)
+        params = {"audioquality": "LOSSLESS", "playbackmode": "STREAM", "assetpresentation": "FULL"}
+        res = await self._request("get", f"{config.desktop_api_url}/tracks/{track_id}/playbackinfo", params=params)
         data = res.json()
         
         if data.get('manifestMimeType') == "application/vnd.tidal.bts":
@@ -87,6 +121,10 @@ class APIClient:
         # e.g., pages/home, pages/explore
         res = await self._request("get", f"{config.api_url_v1}/pages/{page_name}")
         return res.json()
+
+    async def get_track(self, track_id:int)->models.Track:
+        res=await self._request("get",f"{config.api_url_v1}/tracks/{track_id}")
+        return models.Track(**res.json())
 
     async def close(self):
         await self._client.aclose()
